@@ -1,0 +1,15 @@
+[acme]
+domain = 'vpn.rkn.gov.ru'
+email = 'rsoc_in@rkn.gov.ru'
+
+[cloudflare]
+apitoken = '<yourtoken>'
+email = 'rsoc_in@rkn.gov.ru'
+
+[asa]
+mgmtip = '192.168.0.1'
+mgmtport = '443'
+username = '<asalogin>'
+password = '<asapassword>'
+vpninterface = 'outside'
+force = 'False'
