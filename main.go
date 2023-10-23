@@ -87,15 +87,16 @@ func (asa *ASAConfig) InstallCertToASA(certPKCS12 []byte) {
 	lines = append(lines, certBase64)
 	lines = append(lines, "-----END PKCS12-----")
 
+	// Install the certificate on ASA
 	data := map[string]interface{}{
 		"certPass": "automation",
 		"kind":     "object#IdentityCertificate",
 		"certText": lines,
-		"name":     time.Now().Format("20060102"),
+		"name":     "ALE_"+time.Now().Format("20060102"),
 	}
 	asa.post(asa.serverURL()+"/api/certificate/identity", data)
 
-	cmd := fmt.Sprintf("ssl trust-point %s %s", time.Now().Format("20060102"), asa.VPNInterface)
+	cmd := fmt.Sprintf("ssl trust-point %s %s", "ALE_"+time.Now().Format("20060102"), asa.VPNInterface)
 	data = map[string]interface{}{
 		"commands": []string{cmd, "write"},
 	}
@@ -130,19 +131,32 @@ func shouldRenew(certPath string) bool {
 	return timeLeft < (7 * 24 * time.Hour)
 }
 
-// Function to parse the first certificate from the PEM data
-func parseFirstCertificate(certPEM []byte) (*x509.Certificate, error) {
-	block, _ := pem.Decode(certPEM)
-	if block == nil || block.Type != "CERTIFICATE" {
-		return nil, fmt.Errorf("failed to decode PEM block containing a certificate")
+// Function to parse all certificates from the PEM data
+func parseAllCertificates(certPEM []byte) ([]*x509.Certificate, error) {
+	var certs []*x509.Certificate
+
+	for {
+		block, rest := pem.Decode(certPEM)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("failed to decode PEM block containing a certificate")
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		certs = append(certs, cert)
+		certPEM = rest
 	}
 
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return nil, err
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no certificates found")
 	}
 
-	return cert, nil
+	return certs, nil
 }
 
 
@@ -275,10 +289,10 @@ func main() {
 			log.Fatalf("Error reading the key file: %s", err)
 		}
 		
-		// Parse the first certificate
-		cert, err := parseFirstCertificate(certBytes)
+		// Parse all certificates
+		certs, err := parseAllCertificates(certBytes)
 		if err != nil {
-			log.Fatalf("Error parsing the certificate: %s", err)
+			log.Fatalf("Error parsing the certificates: %s", err)
 		}
 
 		// Parse the private key
@@ -300,7 +314,7 @@ func main() {
 			log.Fatalf("Error parsing the private key: %s", err)
 		}
 		
-		pkcs12Data, err := pkcs12.Encode(rand.Reader, key, cert, nil, "automation")
+		pkcs12Data, err := pkcs12.Encode(rand.Reader, key, certs[0], certs[1:], "automation")
 
 
 		// Save the PKCS12 data to a file
